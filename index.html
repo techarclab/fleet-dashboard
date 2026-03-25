@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fleet Hub v2.1 — Cloud Harbor Technologies</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1692.0/aws-sdk.min.js"></script>
+<script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+:root{--bg:#060a13;--card:rgba(255,255,255,0.025);--border:rgba(255,255,255,0.06);--cyan:#22d3ee;--green:#22c55e;--amber:#eab308;--red:#ef4444;--purple:#a855f7;--text:rgba(255,255,255,0.85);--muted:rgba(255,255,255,0.3);--mono:'DM Mono',monospace;--sans:'Outfit',sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:12px}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}@keyframes slideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08);border-radius:2px}.leaflet-control-attribution{display:none!important}
+
+.hdr{padding:8px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,.015);position:sticky;top:0;z-index:100}
+.hdr-left{display:flex;align-items:center;gap:14px}.logo{width:28px;height:28px;background:linear-gradient(135deg,var(--cyan),#0284c7);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:14px}
+.brand-name{font-family:var(--sans);font-size:14px;font-weight:700;letter-spacing:.5px}.brand-sub{font-size:8px;color:var(--muted);letter-spacing:1.5px}
+.conn{display:flex;align-items:center;gap:5px;font-size:9px;font-weight:600}.conn-dot{width:7px;height:7px;border-radius:50%;animation:pulse 2s infinite}
+.hdr-right{display:flex;gap:16px}.hdr-m{text-align:right}.hdr-ml{font-size:7px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase}.hdr-mv{font-size:10px;font-weight:500}
+
+.dash{padding:12px;display:grid;grid-template-columns:1fr 300px;gap:10px;height:calc(100vh - 44px)}
+.left{display:flex;flex-direction:column;gap:10px;overflow:hidden}.right{display:flex;flex-direction:column;gap:8px;overflow-y:auto}
+
+.card{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:10px 12px}
+.card-t{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px}
+.card-t::before{content:'◈';color:var(--cyan);margin-right:5px}
+
+.map-wrap{flex:1;min-height:300px;border-radius:6px;overflow:hidden;border:1px solid var(--border);position:relative}
+#fleet-map{width:100%;height:100%;background:#0e1726}
+.map-ov{position:absolute;z-index:1000;backdrop-filter:blur(8px)}
+.map-badge{top:8px;left:8px;background:rgba(34,211,238,.12);border:1px solid rgba(34,211,238,.25);border-radius:16px;padding:2px 10px;display:flex;align-items:center;gap:5px}
+.map-badge-dot{width:5px;height:5px;border-radius:50%;background:var(--cyan);animation:pulse 2s infinite}
+.map-badge-txt{font-size:8px;color:var(--cyan);font-weight:600;letter-spacing:.5px}
+.map-info{bottom:8px;left:8px;background:rgba(6,10,19,.9);border:1px solid var(--border);border-radius:6px;padding:6px 10px;display:flex;gap:14px}
+.map-il{font-size:7px;color:var(--muted)}.map-iv{font-size:11px;font-weight:500}
+
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.stat{position:relative;overflow:hidden}.stat .bar{position:absolute;top:0;left:0;width:3px;height:100%;border-radius:6px 0 0 6px}
+.stat-v{font-size:20px;font-weight:700;line-height:1}.stat-s{font-size:8px;color:var(--muted);margin-top:2px}
+
+.info-r{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.03)}.info-r:last-child{border:none}
+.info-k{font-size:9px;color:rgba(255,255,255,.4)}.info-v{font-size:9px;font-weight:500}
+
+.alert-item{display:flex;gap:6px;align-items:flex-start;padding:4px 5px;border-radius:3px;animation:slideIn .3s ease;font-size:9px}
+.alert-time{font-size:7px;color:var(--muted);white-space:nowrap;margin-top:1px}
+.alert-badge{font-size:6px;padding:1px 4px;border-radius:2px;font-weight:700;white-space:nowrap}
+.alert-msg{color:rgba(255,255,255,.5)}
+
+.score-ring{position:relative;display:inline-flex;align-items:center;justify-content:center}
+.score-val{position:absolute;font-size:16px;font-weight:700;font-family:var(--mono)}
+
+.gf-item{padding:5px 0;border-bottom:1px solid rgba(255,255,255,.03);display:flex;justify-content:space-between;align-items:center}
+.gf-name{font-size:9px;font-weight:500}.gf-status{font-size:8px;padding:1px 6px;border-radius:8px}
+.empty{font-size:9px;color:var(--muted);text-align:center;padding:12px 0}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-left">
+    <div class="logo">🚛</div>
+    <div><div class="brand-name">FLEET HUB</div><div class="brand-sub">Cloud Harbor Technologies</div></div>
+    <div style="width:1px;height:24px;background:var(--border)"></div>
+    <div class="conn"><div class="conn-dot" id="cDot" style="background:var(--amber)"></div><span id="cLbl" style="color:var(--amber)">CONNECTING…</span></div>
+  </div>
+  <div class="hdr-right">
+    <div class="hdr-m"><div class="hdr-ml">Device</div><div class="hdr-mv" id="hDev" style="color:var(--cyan)">—</div></div>
+    <div class="hdr-m"><div class="hdr-ml">Firmware</div><div class="hdr-mv" id="hFw">—</div></div>
+    <div class="hdr-m"><div class="hdr-ml">Last Update</div><div class="hdr-mv" id="hTime">—</div></div>
+    <div class="hdr-m"><div class="hdr-ml">Score</div><div class="hdr-mv" id="hScore" style="color:var(--green)">—</div></div>
+  </div>
+</div>
+
+<div class="dash">
+  <div class="left">
+    <div class="map-wrap">
+      <div id="fleet-map"></div>
+      <div class="map-ov map-badge"><div class="map-badge-dot"></div><span class="map-badge-txt">LIVE</span></div>
+      <div class="map-ov map-info">
+        <div><div class="map-il">LAT</div><div class="map-iv" id="mLat">—</div></div>
+        <div><div class="map-il">LNG</div><div class="map-iv" id="mLng">—</div></div>
+        <div><div class="map-il">SPD</div><div class="map-iv" id="mSpd" style="color:var(--cyan)">—</div></div>
+        <div><div class="map-il">HDG</div><div class="map-iv" id="mHdg">—</div></div>
+        <div><div class="map-il">ALT</div><div class="map-iv" id="mAlt">—</div></div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="card stat"><div class="bar" style="background:var(--cyan)"></div><div class="card-t">Speed</div><div class="stat-v" id="sSpd">—</div><div class="stat-s">km/h</div></div>
+      <div class="card stat"><div class="bar" id="sSigBar" style="background:var(--green)"></div><div class="card-t">Signal</div><div class="stat-v" id="sSig">—</div><div class="stat-s" id="sDbm">—</div></div>
+      <div class="card stat"><div class="bar" style="background:var(--green)"></div><div class="card-t">Satellites</div><div class="stat-v" id="sSat">—</div><div class="stat-s" id="sFix">—</div></div>
+      <div class="card stat"><div class="bar" style="background:var(--purple)"></div><div class="card-t">Published</div><div class="stat-v" id="sPub">—</div><div class="stat-s" id="sPubS">—</div></div>
+      <div class="card stat"><div class="bar" style="background:var(--amber)"></div><div class="card-t">Alerts</div><div class="stat-v" id="sAlert">0</div><div class="stat-s" id="sAlertS">—</div></div>
+    </div>
+    <div class="card" style="flex:0 0 auto;max-height:180px;overflow:hidden">
+      <div class="card-t">Event Log</div>
+      <div id="eLog" style="display:flex;flex-direction:column;gap:2px;max-height:150px;overflow-y:auto"></div>
+    </div>
+  </div>
+
+  <div class="right">
+    <!-- Driver Score -->
+    <div class="card" style="text-align:center">
+      <div class="card-t">Driver Score</div>
+      <div style="display:flex;align-items:center;justify-content:space-around">
+        <div class="score-ring"><svg id="scoreRing" width="70" height="70" viewBox="0 0 70 70"></svg><span class="score-val" id="scoreVal">—</span></div>
+        <div style="text-align:left">
+          <div class="info-r"><span class="info-k">Accel</span><span class="info-v" id="dAccel">0</span></div>
+          <div class="info-r"><span class="info-k">Brake</span><span class="info-v" id="dBrake">0</span></div>
+          <div class="info-r"><span class="info-k">Corner</span><span class="info-v" id="dCorner">0</span></div>
+          <div class="info-r"><span class="info-k">Speeding</span><span class="info-v" id="dSpeed">0</span></div>
+          <div class="info-r"><span class="info-k">Limit</span><span class="info-v" id="dLimit">—</span></div>
+        </div>
+      </div>
+    </div>
+    <!-- Trip -->
+    <div class="card">
+      <div class="card-t">Trip</div>
+      <div id="tripInfo"><div class="empty">No active trip</div></div>
+    </div>
+    <!-- Geofences -->
+    <div class="card">
+      <div class="card-t">Geofences</div>
+      <div id="gfInfo"><div class="empty">No zones configured</div></div>
+    </div>
+    <!-- System -->
+    <div class="card">
+      <div class="card-t">System</div>
+      <div id="sysInfo"></div>
+    </div>
+    <!-- TPMS -->
+    <div class="card">
+      <div class="card-t">TPMS</div>
+      <div id="tpmsInfo"><div class="empty">No sensors</div></div>
+    </div>
+    <!-- Alerts Feed -->
+    <div class="card" style="flex:1;min-height:100px;overflow:hidden">
+      <div class="card-t">Alerts</div>
+      <div id="alertFeed" style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:2px"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const CFG={region:'ap-south-1',pool:'ap-south-1:54907701-a8f2-4902-98b3-4cce8068029c',
+  endpoint:'a2s18q24k203dr-ats.iot.ap-south-1.amazonaws.com',devId:'hub-prototype-001'};
+const TOPICS={wild:'dt/fleet/'+CFG.devId+'/#',alerts:'dt/fleet/'+CFG.devId+'/alerts'};
+
+let mqttC=null,map=null,marker=null,pathLine=null,pathPts=[],gfCircles={},mqttN=0;
+
+// ════════════════════════════════════════════════════════════════
+// localStorage PERSISTENCE
+// ════════════════════════════════════════════════════════════════
+const STORAGE_KEYS = { trail: 'fh_trail', lastTelem: 'fh_telem', alerts: 'fh_alerts' };
+const MAX_STORED_TRAIL = 500;  // Max GPS points to persist
+const MAX_STORED_ALERTS = 50;
+
+function saveTrail() {
+  try { localStorage.setItem(STORAGE_KEYS.trail, JSON.stringify(pathPts.slice(-MAX_STORED_TRAIL))); } catch(e) {}
+}
+function loadTrail() {
+  try { const d = localStorage.getItem(STORAGE_KEYS.trail); if (d) { pathPts = JSON.parse(d); return true; } } catch(e) {}
+  return false;
+}
+function saveLastTelemetry(data) {
+  try { data._savedAt = Date.now(); localStorage.setItem(STORAGE_KEYS.lastTelem, JSON.stringify(data)); } catch(e) {}
+}
+function loadLastTelemetry() {
+  try { const d = localStorage.getItem(STORAGE_KEYS.lastTelem); if (d) return JSON.parse(d); } catch(e) {}
+  return null;
+}
+function saveAlerts(alertsArr) {
+  try { localStorage.setItem(STORAGE_KEYS.alerts, JSON.stringify(alertsArr.slice(-MAX_STORED_ALERTS))); } catch(e) {}
+}
+function loadAlerts() {
+  try { const d = localStorage.getItem(STORAGE_KEYS.alerts); if (d) return JSON.parse(d); } catch(e) {}
+  return [];
+}
+
+let storedAlerts = [];
+
+// ════════════════════════════════════════════════════════════════
+// MAP
+// ════════════════════════════════════════════════════════════════
+function initMap(){
+  // Load persisted trail
+  const hadTrail = loadTrail();
+  const center = pathPts.length > 0 ? pathPts[pathPts.length - 1] : [17.3117, 78.5824];
+
+  map=L.map('fleet-map',{center:center,zoom:15,zoomControl:false,attributionControl:false});
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
+  const icon=L.divIcon({className:'',html:'<div style="width:16px;height:16px;background:#22d3ee;border-radius:50%;border:3px solid #060a13;box-shadow:0 0 10px rgba(34,211,238,.5)"></div>',iconSize:[16,16],iconAnchor:[8,8]});
+  marker=L.marker(center,{icon}).addTo(map);
+  pathLine=L.polyline(pathPts,{color:'#22d3ee',weight:2,opacity:.35}).addTo(map);
+
+  if (hadTrail && pathPts.length > 0) {
+    // Fit map to show entire trail
+    if (pathPts.length > 1) {
+      map.fitBounds(L.latLngBounds(pathPts), {padding: [30, 30], maxZoom: 16});
+    }
+    addLog('sys', `Restored ${pathPts.length} GPS points from history`);
+  }
+}
+
+function updateMap(lat,lng){
+  if(!map) return;
+  marker.setLatLng([lat,lng]);
+  map.setView([lat,lng],map.getZoom(),{animate:true,duration:.5});
+  pathPts.push([lat,lng]);
+  if(pathPts.length > MAX_STORED_TRAIL) pathPts.shift();
+  pathLine.setLatLngs(pathPts);
+  // Save trail every 5th update to reduce writes
+  if(pathPts.length % 5 === 0) saveTrail();
+}
+
+// ════════════════════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════════════════════
+function fmtUp(s){const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return d>0?`${d}d ${h}h`:h>0?`${h}h ${m}m`:`${m}m`;}
+function fmtB(b){return b>1048576?(b/1048576).toFixed(1)+' MB':b>1024?(b/1024).toFixed(0)+' KB':b+' B';}
+function csqClr(c){return c>=20?'#22c55e':c>=15?'#84cc16':c>=10?'#eab308':c>=5?'#f97316':'#ef4444';}
+function setConn(s,l){const c={connected:'#22c55e',connecting:'#eab308',error:'#ef4444'};document.getElementById('cDot').style.background=c[s]||'#eab308';
+  const el=document.getElementById('cLbl');el.style.color=c[s]||'#eab308';el.textContent=l;}
+function timeStr(d){ d = d || new Date(); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`; }
+
+function addLog(type,msg){
+  const el=document.getElementById('eLog');
+  const t=timeStr();
+  const colors={pub:['rgba(34,211,238,.12)','var(--cyan)'],cmd:['rgba(168,85,247,.12)','var(--purple)'],alert:['rgba(239,68,68,.12)','var(--red)'],
+    sys:['rgba(255,255,255,.05)','var(--muted)'],geo:['rgba(34,197,94,.12)','var(--green)'],trip:['rgba(234,179,8,.12)','var(--amber)']};
+  const[bg,fg]=colors[type]||colors.sys;
+  const d=document.createElement('div');d.className='alert-item';
+  d.innerHTML=`<span class="alert-time">${t}</span><span class="alert-badge" style="background:${bg};color:${fg}">${type.toUpperCase()}</span><span class="alert-msg">${msg}</span>`;
+  el.insertBefore(d,el.firstChild);while(el.children.length>20)el.removeChild(el.lastChild);
+}
+
+function drawScoreRing(score){
+  const svg=document.getElementById('scoreRing');if(!svg)return;
+  const pct=score/100,r=28,cx=35,cy=35;
+  const color=score>=80?'#22c55e':score>=60?'#84cc16':score>=40?'#eab308':'#ef4444';
+  const circ=2*Math.PI*r;const off=circ*(1-pct);
+  svg.innerHTML=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="5"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round"
+      stroke-dasharray="${circ}" stroke-dashoffset="${off}" transform="rotate(-90 ${cx} ${cy})" style="transition:all .8s"/>`;
+  document.getElementById('scoreVal').textContent=Math.round(score);
+  document.getElementById('scoreVal').style.color=color;
+  document.getElementById('hScore').textContent=Math.round(score);
+  document.getElementById('hScore').style.color=color;
+}
+
+// ════════════════════════════════════════════════════════════════
+// MESSAGE HANDLER
+// ════════════════════════════════════════════════════════════════
+function handleMsg(topic,data){
+  const short=topic.split('/').pop();
+  if(short==='telemetry'){updateDash(data);saveLastTelemetry(data);addLog('pub',`Telem #${data.msgNum||'?'} (${data.gps?.sats||0} sats)`);}
+  else if(short==='status'){addLog('sys',`Online — v${data.fw||'?'}`);}
+  else if(short==='lwt'){addLog('alert','Device OFFLINE');setConn('error','DEVICE OFFLINE');}
+  else if(short==='cmd_resp'){addLog('cmd',`${data.cmd||data.ota||'resp'}`);}
+  else if(short==='alerts'){handleAlert(data);}
+}
+
+function handleAlert(data){
+  const el=document.getElementById('alertFeed');
+  const t=timeStr();
+  const type=data.alert||'unknown';
+  const isGeo=type.includes('geofence');const isTrip=type.includes('trip');const isDriver=type.includes('harsh')||type.includes('speed');
+  const bg=isGeo?'rgba(34,197,94,.12)':isTrip?'rgba(234,179,8,.12)':isDriver?'rgba(239,68,68,.12)':'rgba(168,85,247,.12)';
+  const fg=isGeo?'var(--green)':isTrip?'var(--amber)':isDriver?'var(--red)':'var(--purple)';
+  let detail=type;
+  if(data.zone) detail+=` — ${data.zone}`;
+  if(data.speed) detail+=` ${data.speed} km/h`;
+  if(data.sensor) detail+=` ${data.sensor}`;
+  if(data.tripNum) detail+=` #${data.tripNum}`;
+  if(data.distKm) detail+=` ${data.distKm} km`;
+
+  // Save to persistent alerts
+  storedAlerts.push({t, type, detail, bg, fg, ts: Date.now()});
+  if(storedAlerts.length > MAX_STORED_ALERTS) storedAlerts.shift();
+  saveAlerts(storedAlerts);
+
+  const d=document.createElement('div');d.className='alert-item';
+  d.innerHTML=`<span class="alert-time">${t}</span><span class="alert-badge" style="background:${bg};color:${fg}">${type}</span><span class="alert-msg">${detail}</span>`;
+  el.insertBefore(d,el.firstChild);while(el.children.length>30)el.removeChild(el.lastChild);
+
+  addLog(isGeo?'geo':isTrip?'trip':'alert',detail);
+}
+
+function restoreAlerts() {
+  storedAlerts = loadAlerts();
+  if (storedAlerts.length === 0) return;
+  const el = document.getElementById('alertFeed');
+  // Show last 15 alerts in reverse chronological order
+  storedAlerts.slice(-15).reverse().forEach(a => {
+    const d = document.createElement('div'); d.className = 'alert-item';
+    d.innerHTML = `<span class="alert-time">${a.t}</span><span class="alert-badge" style="background:${a.bg};color:${a.fg}">${a.type}</span><span class="alert-msg">${a.detail}</span>`;
+    el.appendChild(d);
+  });
+  addLog('sys', `Restored ${storedAlerts.length} alerts from history`);
+}
+
+// ════════════════════════════════════════════════════════════════
+// DASHBOARD UPDATE
+// ════════════════════════════════════════════════════════════════
+function updateDash(d){
+  document.getElementById('hTime').textContent=new Date().toLocaleTimeString();
+  document.getElementById('hDev').textContent=d.deviceId||'—';
+  document.getElementById('hFw').textContent=d.fw?'v'+d.fw:'—';
+
+  // GPS
+  if(d.gps){document.getElementById('mLat').textContent=d.gps.lat?.toFixed(6)||'—';
+    document.getElementById('mLng').textContent=d.gps.lng?.toFixed(6)||'—';
+    document.getElementById('mSpd').textContent=(d.gps.speed||0)+' km/h';
+    document.getElementById('mHdg').textContent=(d.gps.heading||0).toFixed(1)+'°';
+    document.getElementById('mAlt').textContent=(d.gps.alt||0).toFixed(0)+'m';
+    if(d.gps.fix&&d.gps.lat&&d.gps.lng)updateMap(d.gps.lat,d.gps.lng);
+    document.getElementById('sSat').textContent=d.gps.sats??'—';
+    document.getElementById('sFix').textContent=d.gps.fix?'Fix Active':'No Fix';
+    document.getElementById('sSpd').textContent=d.gps.speed??'—';}
+
+  // Signal
+  if(d.signal){document.getElementById('sSig').textContent=d.signal.csq??'—';
+    document.getElementById('sDbm').textContent=(d.signal.dbm||'—')+' dBm';
+    document.getElementById('sSigBar').style.background=csqClr(d.signal.csq);}
+
+  // Stats
+  document.getElementById('sPub').textContent=d.pubOk??'—';
+  document.getElementById('sPubS').textContent=`${d.pubFail||0} fail, ${d.bufPending||0} buf`;
+  document.getElementById('sAlert').textContent=d.alertsSent||0;
+  document.getElementById('sAlertS').textContent=`${d.cmdsRx||0} cmds`;
+
+  // Driver
+  if(d.driver){drawScoreRing(d.driver.score||0);
+    document.getElementById('dAccel').textContent=d.driver.harshAccel||0;
+    document.getElementById('dBrake').textContent=d.driver.harshBrake||0;
+    document.getElementById('dCorner').textContent=d.driver.harshCorner||0;
+    document.getElementById('dSpeed').textContent=d.driver.speeding||0;
+    document.getElementById('dLimit').textContent=(d.driver.speedLimit||80)+' km/h';}
+
+  // Trip
+  const tripEl=document.getElementById('tripInfo');
+  if(d.trip?.active){tripEl.innerHTML=`
+    <div class="info-r"><span class="info-k">Trip #</span><span class="info-v">${d.trip.num}</span></div>
+    <div class="info-r"><span class="info-k">Duration</span><span class="info-v">${d.trip.durationMin?.toFixed(1)||0} min</span></div>
+    <div class="info-r"><span class="info-k">Distance</span><span class="info-v">${d.trip.distKm?.toFixed(2)||0} km</span></div>
+    <div class="info-r"><span class="info-k">Max Speed</span><span class="info-v">${d.trip.maxSpeed?.toFixed(1)||0} km/h</span></div>`;
+  } else tripEl.innerHTML=`<div class="info-r"><span class="info-k">Status</span><span class="info-v">Idle</span></div>
+    <div class="info-r"><span class="info-k">Total Trips</span><span class="info-v">${d.trip?.num||0}</span></div>`;
+
+  // Geofences
+  const gfEl=document.getElementById('gfInfo');
+  if(d.geofences&&d.geofences.length>0){gfEl.innerHTML=d.geofences.map(g=>{
+    const clr=g.inside?'var(--green)':'var(--muted)';const gbg=g.inside?'rgba(34,197,94,.12)':'rgba(255,255,255,.04)';
+    return `<div class="gf-item"><span class="gf-name">${g.name}</span><span class="gf-status" style="background:${gbg};color:${clr}">${g.inside?'INSIDE':'outside'} ${g.dist>=0?Math.round(g.dist)+'m':''}</span></div>`;
+  }).join('');}else gfEl.innerHTML='<div class="empty">No zones configured</div>';
+
+  // System
+  document.getElementById('sysInfo').innerHTML=[
+    ['Uptime',fmtUp(d.uptime||0)],['Heap',fmtB(d.freeHeap||0)],['Interval',(d.intervalMs||10000)/1000+'s'],
+    ['Commands',d.cmdsRx||0],['Msg #','#'+(d.msgNum||0)],['Alerts Sent',d.alertsSent||0],
+  ].map(([k,v])=>`<div class="info-r"><span class="info-k">${k}</span><span class="info-v">${v}</span></div>`).join('');
+
+  // TPMS
+  const tEl=document.getElementById('tpmsInfo');
+  if(d.tpms&&d.tpms.length>0){tEl.innerHTML=d.tpms.map(t=>{
+    const warn=t.psi<25||t.psi>55||t.tempC>80;
+    return `<div class="info-r"><span class="info-k" style="${warn?'color:var(--red)':''}">${t.mac}</span><span class="info-v" style="${warn?'color:var(--red)':'color:var(--cyan)'}">${t.psi.toFixed(1)} PSI ${t.tempC.toFixed(0)}°C</span></div>`;
+  }).join('');}else tEl.innerHTML='<div class="empty">No sensors</div>';
+}
+
+// ════════════════════════════════════════════════════════════════
+// RESTORE STATE ON LOAD
+// ════════════════════════════════════════════════════════════════
+function restoreState() {
+  // Restore last telemetry data to fill all panels
+  const last = loadLastTelemetry();
+  if (last) {
+    const age = Date.now() - (last._savedAt || 0);
+    const ageMin = Math.round(age / 60000);
+    updateDash(last);
+    addLog('sys', `Restored last telemetry (${ageMin}m ago)`);
+  }
+  // Restore alerts
+  restoreAlerts();
+}
+
+// ════════════════════════════════════════════════════════════════
+// AWS IoT MQTT CONNECTION
+// ════════════════════════════════════════════════════════════════
+async function connect(){
+  addLog('sys','Authenticating...');
+  AWS.config.region=CFG.region;AWS.config.credentials=new AWS.CognitoIdentityCredentials({IdentityPoolId:CFG.pool});
+  try{await new Promise((r,j)=>AWS.config.credentials.get(e=>e?j(e):r()));addLog('sys','Cognito OK');}
+  catch(e){addLog('alert','Auth failed: '+e.message);setConn('error','AUTH FAILED');return;}
+  const creds=AWS.config.credentials,host=CFG.endpoint,region=CFG.region;
+  const now=new Date(),ds=now.toISOString().replace(/[:\-]|\.\d{3}/g,'').substring(0,8),amz=now.toISOString().replace(/[:\-]|\.\d{3}/g,'').substring(0,15)+'Z';
+  const svc='iotdevicegateway',scope=`${ds}/${region}/${svc}/aws4_request`,alg='AWS4-HMAC-SHA256';
+  const qp=[`X-Amz-Algorithm=${alg}`,`X-Amz-Credential=${encodeURIComponent(creds.accessKeyId+'/'+scope)}`,`X-Amz-Date=${amz}`,`X-Amz-SignedHeaders=host`].sort().join('&');
+  const cr=`GET\n/mqtt\n${qp}\nhost:${host}\n\nhost\n${await sha256('')}`;
+  const sts=`${alg}\n${amz}\n${scope}\n${await sha256(cr)}`;
+  const sk=await getSigKey(creds.secretAccessKey,ds,region,svc);const sig=await hmacHex(sk,sts);
+  let url=`wss://${host}/mqtt?${qp}&X-Amz-Signature=${sig}`;
+  if(creds.sessionToken)url+=`&X-Amz-Security-Token=${encodeURIComponent(creds.sessionToken)}`;
+  addLog('sys','Connecting MQTT...');setConn('connecting','CONNECTING…');
+  mqttC=mqtt.connect(url,{transformWsUrl:u=>u,protocolVersion:4,clean:true,reconnectPeriod:5000,connectTimeout:10000,clientId:'dash-'+Math.random().toString(16).substr(2,8)});
+  mqttC.on('connect',()=>{addLog('sys','Connected to AWS IoT Core');setConn('connected','CONNECTED');
+    mqttC.subscribe(TOPICS.wild,{qos:0},e=>{if(e)addLog('alert','Sub failed');else addLog('sys','Subscribed: '+TOPICS.wild);});});
+  mqttC.on('message',(t,p)=>{mqttN++;try{handleMsg(t,JSON.parse(p.toString()));}catch(e){}});
+  mqttC.on('error',e=>{addLog('alert','MQTT: '+e.message);setConn('error','ERROR');});
+  mqttC.on('close',()=>{addLog('sys','Disconnected');setConn('connecting','RECONNECTING…');});
+}
+
+// Save trail on page unload
+window.addEventListener('beforeunload', () => { saveTrail(); });
+
+// ════════════════════════════════════════════════════════════════
+// CRYPTO
+// ════════════════════════════════════════════════════════════════
+async function sha256(m){const b=new TextEncoder().encode(m);const h=await crypto.subtle.digest('SHA-256',b);return Array.from(new Uint8Array(h)).map(b=>b.toString(16).padStart(2,'0')).join('');}
+async function hmac(k,m){const ck=await crypto.subtle.importKey('raw',k instanceof ArrayBuffer?k:new TextEncoder().encode(k),{name:'HMAC',hash:'SHA-256'},false,['sign']);return await crypto.subtle.sign('HMAC',ck,new TextEncoder().encode(m));}
+async function hmacHex(k,m){const s=await hmac(k,m);return Array.from(new Uint8Array(s)).map(b=>b.toString(16).padStart(2,'0')).join('');}
+async function getSigKey(k,d,r,s){const kd=await hmac('AWS4'+k,d);const kr=await hmac(kd,r);const ks=await hmac(kr,s);return await hmac(ks,'aws4_request');}
+
+// ════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded',()=>{
+  initMap();        // Loads persisted trail from localStorage
+  restoreState();   // Fills dashboard with last known telemetry + alerts
+  connect();        // Connects to AWS IoT Core for live data
+});
+</script>
+</body>
+</html>
