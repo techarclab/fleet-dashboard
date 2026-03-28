@@ -595,7 +595,7 @@ body{
     <div class="hdr-metrics">
       <div class="hdr-m">
         <div class="hdr-ml">Vehicle</div>
-        <div class="hdr-mv" id="hVehicle">TS07JA6273</div>
+        <div class="hdr-mv" id="hVehicle">AP09AB1234</div>
       </div>
       <div class="hdr-m">
         <div class="hdr-ml">Firmware</div>
@@ -1256,10 +1256,27 @@ let telemetry_interval_ms = 10000;
 
 function syncGfFromTelemetry(gfArr) {
   if (!gfArr||!gfArr.length) return;
+  let changed = false;
   gfArr.forEach(tGf => {
-    const local = localGeofences.find(l=>l.name===tGf.name);
-    if (local) { local.inside=tGf.inside; if(tGf.dist>=0) local.dist=tGf.dist; }
+    // Case-insensitive name matching to handle mismatches
+    const local = localGeofences.find(l=>l.name.toLowerCase().trim()===tGf.name.toLowerCase().trim());
+    if (local) {
+      local.inside = tGf.inside;
+      if (tGf.dist >= 0) local.dist = tGf.dist;
+    } else {
+      // Adopt geofences from device that don't exist locally
+      // (created from another browser/session or via MQTT command)
+      localGeofences.push({
+        name: tGf.name,
+        lat: 0, lng: 0, // Position unknown from telemetry — geofence circle won't draw
+        radius: 200,
+        inside: tGf.inside,
+        dist: tGf.dist >= 0 ? tGf.dist : -1,
+      });
+      changed = true;
+    }
   });
+  if (changed) ls.set(SK.gf, localGeofences);
   renderGeofences();
 }
 
