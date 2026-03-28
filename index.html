@@ -595,7 +595,7 @@ body{
     <div class="hdr-metrics">
       <div class="hdr-m">
         <div class="hdr-ml">Vehicle</div>
-        <div class="hdr-mv" id="hVehicle">AP09AB1234</div>
+        <div class="hdr-mv" id="hVehicle">TS07JA6273</div>
       </div>
       <div class="hdr-m">
         <div class="hdr-ml">Firmware</div>
@@ -808,6 +808,36 @@ const TPMS_ORDER = ['80:EA:CA:03:3E:D3','80:EA:CA:03:3F:36','80:EA:CA:03:3E:BD',
 
 // Normal tyre pressure range for dashboard warning
 const TPMS_LOW_PSI = 25, TPMS_HIGH_PSI = 45, TPMS_HIGH_TEMP = 75;
+
+// ════════════════════════════════════════════════════════════════
+// API CONFIG (Layer 2 — DynamoDB-backed REST API)
+// ════════════════════════════════════════════════════════════════
+const API = {
+  base: 'https://u0zzx4kjbj.execute-api.ap-south-1.amazonaws.com/v1',
+  key:  'cU6Xnl6ySm99jrJnNAcZI79mgsP5k1Nx19QfSrAf',
+};
+
+async function api(path) {
+  const r = await fetch(`${API.base}/device/${CFG.devId}${path}`, { headers: { 'x-api-key': API.key } });
+  if (!r.ok) return null;
+  return await r.json();
+}
+
+async function apiPut(path, body) {
+  const r = await fetch(`${API.base}/device/${CFG.devId}${path}`, {
+    method: 'PUT', headers: { 'x-api-key': API.key, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) return null;
+  return await r.json();
+}
+
+// ════════════════════════════════════════════════════════════════
+// SESSION PERSISTENCE — survive page refresh
+// ════════════════════════════════════════════════════════════════
+const SESSION_KEY = 'fh_session';
+function setSession() { sessionStorage.setItem(SESSION_KEY, JSON.stringify({ auth:true, exp:Date.now()+(8*3600000) })); }
+function hasValidSession() { try { const s=JSON.parse(sessionStorage.getItem(SESSION_KEY)); return s&&s.auth&&Date.now()<s.exp; } catch(e){ return false; } }
 
 // ════════════════════════════════════════════════════════════════
 // STATE
@@ -1105,6 +1135,7 @@ function setSpeedLimit() {
   if (isNaN(v)||v<20||v>200) { alert('Enter 20–200 km/h'); return; }
   publishCmd('set_speed_limit', {value: String(v)});
   currentSpeedLimit = v;
+  saveConfigToAPI();
   document.getElementById('currentLimitDisplay').textContent = `Active: ${v} km/h`;
   drawSpeedChart();
   const btn = document.getElementById('speedLimBtn');
@@ -1166,6 +1197,7 @@ function addGeofence() {
   publishCmd('add_geofence', {name, lat:lat.toFixed(6), lng:lng.toFixed(6), radius:String(rad)});
   localGeofences.push({name, lat, lng, radius:rad, inside:false, dist:-1});
   ls.set(SK.gf, localGeofences);
+  saveConfigToAPI();
   drawGfCircle(lat, lng, rad, name);
   renderGeofences();
   ['gfName','gfLat','gfLng'].forEach(id=>document.getElementById(id).value='');
@@ -1178,6 +1210,7 @@ function removeGf(i) {
   publishCmd('remove_geofence', {name: gf.name});
   localGeofences.splice(i,1);
   ls.set(SK.gf, localGeofences);
+  saveConfigToAPI();
   rebuildGfCircles();
   renderGeofences();
 }
@@ -1193,6 +1226,7 @@ function oneClickGeofence() {
   publishCmd('add_geofence', {name, lat:lat.toFixed(6), lng:lng.toFixed(6), radius:'200'});
   localGeofences.push({name, lat, lng, radius:200, inside:false, dist:-1});
   ls.set(SK.gf, localGeofences);
+  saveConfigToAPI();
   drawGfCircle(lat, lng, 200, name);
   renderGeofences();
   // Pan map to circle
@@ -1206,6 +1240,19 @@ function fillCurrentGPS() {
   document.getElementById('gfLat').value = last.gps.lat.toFixed(6);
   document.getElementById('gfLng').value = last.gps.lng.toFixed(6);
 }
+
+// ════════════════════════════════════════════════════════════════
+// CONFIG API — persist geofences + speed limit to DynamoDB
+// ════════════════════════════════════════════════════════════════
+function saveConfigToAPI() {
+  apiPut('/config', {
+    geofences: localGeofences,
+    speedLimit: currentSpeedLimit,
+    intervalMs: telemetry_interval_ms || 10000,
+  }).then(r => { if(r) console.log('Config saved to API'); })
+    .catch(e => console.warn('Config save failed:', e));
+}
+let telemetry_interval_ms = 10000;
 
 function syncGfFromTelemetry(gfArr) {
   if (!gfArr||!gfArr.length) return;
@@ -1470,14 +1517,87 @@ function setConn(state, label) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// RESTORE STATE
+// RESTORE STATE — API-backed (falls back to localStorage)
 // ════════════════════════════════════════════════════════════════
-function restoreState() {
-  const last = ls.get(SK.telem);
-  if (last) updateDash(last);
-  restoreAlerts();
-  setTimeout(() => { drawSpeedChart(); rebuildGfCircles(); renderGeofences(); }, 400);
+async function restoreState() {
   updateTrackingBar(false, false, null);
+
+  // 1. Load latest device state from API (replaces localStorage)
+  try {
+    const latest = await api('/latest');
+    if (latest && latest.data) {
+      updateDash(latest.data);
+      console.log('Restored state from API (DynamoDB LATEST row)');
+    }
+  } catch(e) {
+    console.warn('API /latest failed, falling back to localStorage');
+    const last = ls.get(SK.telem);
+    if (last) updateDash(last);
+  }
+
+  // 2. Load alert history from API
+  try {
+    const alertData = await api('/alerts?hours=24&limit=30');
+    if (alertData && alertData.items && alertData.items.length) {
+      storedAlerts = [];
+      alertData.items.reverse().forEach(a => {
+        const type = a.alert || 'unknown';
+        const tStr = type.toLowerCase();
+        let sev = 'info';
+        if (tStr.includes('tpms')||tStr.includes('harsh')||tStr.includes('crash')) sev='critical';
+        else if (tStr.includes('speed')||tStr.includes('geofence')) sev='warning';
+        let detail = type;
+        if (a.accel) detail = `Harsh Accel ${parseFloat(a.accel).toFixed(1)} km/h/s`;
+        else if (a.brake) detail = `Harsh Brake ${parseFloat(a.brake).toFixed(1)} km/h/s`;
+        else if (a.turn) detail = `Harsh Corner ${parseFloat(a.turn).toFixed(0)} deg/s`;
+        else if (a.psi) detail = `Tire PSI: ${parseFloat(a.psi).toFixed(1)} (${a.sensor||''})`;
+        else if (a.zone) detail = `${type} — ${a.zone}`;
+        else if (a.speed) detail = `${type} @ ${parseFloat(a.speed).toFixed(0)} km/h`;
+        addAlert(sev, type, detail);
+      });
+      console.log(`Restored ${alertData.items.length} alerts from API`);
+    }
+  } catch(e) {
+    console.warn('API /alerts failed, falling back to localStorage');
+    restoreAlerts();
+  }
+
+  // 3. Load geofence config from API
+  try {
+    const cfg = await api('/config');
+    if (cfg && cfg.geofences && cfg.geofences.length) {
+      localGeofences = cfg.geofences;
+      console.log(`Restored ${cfg.geofences.length} geofences from API`);
+    }
+    if (cfg && cfg.speedLimit) {
+      currentSpeedLimit = cfg.speedLimit;
+      document.getElementById('speedLimInput').value = Math.round(currentSpeedLimit);
+      document.getElementById('currentLimitDisplay').textContent = `Active: ${Math.round(currentSpeedLimit)} km/h`;
+    }
+  } catch(e) {
+    console.warn('API /config failed, falling back to localStorage');
+    localGeofences = ls.get(SK.gf, []);
+  }
+
+  // 4. Load telemetry history for speed chart
+  try {
+    const telHist = await api('/telemetry?minutes=30&limit=30');
+    if (telHist && telHist.items && telHist.items.length) {
+      speedHistory = telHist.items.reverse().map(i => {
+        const spd = i.gps?.speed || 0;
+        return spd < 2 ? 0 : spd;
+      });
+      // Also rebuild GPS trail from history
+      const trailPts = telHist.items.filter(i=>i.gps?.fix&&i.gps?.lat).map(i=>[i.gps.lat,i.gps.lng]);
+      if (trailPts.length > pathPts.length) pathPts = trailPts;
+      console.log(`Restored ${speedHistory.length} speed points from API`);
+    }
+  } catch(e) {
+    console.warn('API /telemetry failed, using localStorage');
+    speedHistory = ls.get(SK.speeds, []);
+  }
+
+  setTimeout(() => { drawSpeedChart(); rebuildGfCircles(); renderGeofences(); }, 400);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1531,9 +1651,17 @@ async function hmacHex(k,m){const s=await hmac(k,m);return Array.from(new Uint8A
 async function getSigKey(k,d,r,s){const kd=await hmac('AWS4'+k,d);const kr=await hmac(kd,r);const ks=await hmac(kr,s);return await hmac(ks,'aws4_request');}
 
 // ════════════════════════════════════════════════════════════════
-// LOGIN
+// LOGIN — with session persistence
 // ════════════════════════════════════════════════════════════════
 const AUTH = {user:'arclabs', pass:'12ArC12@'};
+
+function bootApp() {
+  document.getElementById('loginOverlay').style.display='none';
+  document.getElementById('appShell').style.display='flex';
+  initMap();
+  restoreState();
+  connect();
+}
 
 function attemptLogin() {
   const u=document.getElementById('loginUser').value.trim();
@@ -1541,16 +1669,10 @@ function attemptLogin() {
   const err=document.getElementById('loginError');
   if (u===AUTH.user && p===AUTH.pass) {
     err.classList.remove('show');
+    setSession();
     const ov=document.getElementById('loginOverlay');
-    const sh=document.getElementById('appShell');
     ov.classList.add('leaving');
-    setTimeout(()=>{
-      ov.style.display='none';
-      sh.style.display='flex';
-      initMap();
-      restoreState();
-      connect();
-    }, 420);
+    setTimeout(()=>{ bootApp(); }, 420);
   } else {
     err.classList.remove('show');
     void err.offsetWidth;
@@ -1561,6 +1683,9 @@ function attemptLogin() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Session check — skip login if a valid session exists
+  if (hasValidSession()) { bootApp(); return; }
+
   document.getElementById('loginBtn').addEventListener('click', attemptLogin);
   ['loginUser','loginPass'].forEach(id=>{
     document.getElementById(id).addEventListener('keydown',e=>{if(e.key==='Enter')attemptLogin();});
