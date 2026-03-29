@@ -3,38 +3,38 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>ARC Fleet IQ — Intelligent Fleet Management</title>
+<title>Fleet Hub — Intelligent Fleet Management</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1692.0/aws-sdk.min.js"></script>
 <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Manrope:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-  --bg: #07090f;
-  --bg2: #0d1117;
-  --surface: rgba(255,255,255,0.04);
-  --surface2: rgba(255,255,255,0.07);
-  --border: rgba(255,255,255,0.07);
-  --border2: rgba(255,255,255,0.13);
-  --cyan: #00d4ff;
-  --cyan-dim: rgba(0,212,255,0.12);
-  --cyan-glow: rgba(0,212,255,0.35);
-  --green: #00e676;
-  --green-dim: rgba(0,230,118,0.12);
-  --amber: #ffab00;
-  --amber-dim: rgba(255,171,0,0.12);
-  --red: #ff3d57;
-  --red-dim: rgba(255,61,87,0.12);
-  --purple: #7c4dff;
-  --text: rgba(255,255,255,0.92);
-  --text2: rgba(255,255,255,0.55);
-  --text3: rgba(255,255,255,0.3);
-  --mono: 'JetBrains Mono', monospace;
-  --sans: 'Inter', sans-serif;
-  --r: 10px;
-  --rs: 7px;
+  --bg: #060a10;
+  --bg2: #0c1018;
+  --surface: rgba(255,255,255,0.035);
+  --surface2: rgba(255,255,255,0.06);
+  --border: rgba(255,255,255,0.06);
+  --border2: rgba(255,255,255,0.1);
+  --cyan: #22d3ee;
+  --cyan-dim: rgba(34,211,238,0.1);
+  --cyan-glow: rgba(34,211,238,0.3);
+  --green: #34d399;
+  --green-dim: rgba(52,211,153,0.1);
+  --amber: #fbbf24;
+  --amber-dim: rgba(251,191,36,0.1);
+  --red: #f87171;
+  --red-dim: rgba(248,113,113,0.1);
+  --purple: #a78bfa;
+  --text: rgba(255,255,255,0.93);
+  --text2: rgba(255,255,255,0.5);
+  --text3: rgba(255,255,255,0.25);
+  --mono: 'DM Mono', monospace;
+  --sans: 'Manrope', system-ui, sans-serif;
+  --r: 12px;
+  --rs: 8px;
 }
 
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -47,6 +47,7 @@ body{
   font-size:13px;
   display:flex;
   flex-direction:column;
+  -webkit-font-smoothing:antialiased;
 }
 
 /* ── Scrollbar ── */
@@ -63,7 +64,9 @@ body{
 @keyframes floatUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
 @keyframes scan{from{transform:translateY(-100%)}to{transform:translateY(100vh)}}
-@keyframes tripPulse{0%,100%{box-shadow:0 0 0 0 rgba(0,230,118,0.4)}70%{box-shadow:0 0 0 8px rgba(0,230,118,0)}}
+@keyframes tripPulse{0%,100%{box-shadow:0 0 0 0 rgba(52,211,153,0.4)}70%{box-shadow:0 0 0 8px rgba(52,211,153,0)}}
+
+@keyframes glowPulse{0%,100%{filter:drop-shadow(0 0 6px var(--cyan-glow))}50%{filter:drop-shadow(0 0 14px var(--cyan-glow))}}
 
 /* ── Leaflet overrides ── */
 .leaflet-control-attribution,.leaflet-control-zoom{display:none!important;}
@@ -80,29 +83,29 @@ body{
 #loginOverlay::before{
   content:'';position:absolute;inset:0;
   background-image:
-    linear-gradient(rgba(0,212,255,0.03) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(0,212,255,0.03) 1px,transparent 1px);
+    linear-gradient(rgba(34,211,238,0.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(34,211,238,0.03) 1px,transparent 1px);
   background-size:44px 44px;
 }
 #loginOverlay::after{
   content:'';position:absolute;inset:0;
-  background:radial-gradient(ellipse 55% 45% at 50% 50%,rgba(0,212,255,0.06) 0%,transparent 70%);
+  background:radial-gradient(ellipse 55% 45% at 50% 50%,rgba(34,211,238,0.06) 0%,transparent 70%);
 }
 .login-scan{
   position:absolute;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,rgba(0,212,255,0.2),transparent);
+  background:linear-gradient(90deg,transparent,rgba(34,211,238,0.2),transparent);
   animation:scan 5s linear infinite;pointer-events:none;z-index:1;
 }
 .login-card{
   position:relative;z-index:2;
-  width:100%;max-width:360px;
-  padding:36px 32px;
-  background:rgba(13,17,23,0.9);
-  border:1px solid rgba(0,212,255,0.18);
-  border-radius:16px;
-  backdrop-filter:blur(24px);
-  box-shadow:0 0 60px rgba(0,212,255,0.06),0 24px 60px rgba(0,0,0,0.6);
-  animation:floatUp 0.5s cubic-bezier(0.16,1,0.3,1) forwards;
+  width:100%;max-width:380px;
+  padding:40px 36px;
+  background:rgba(12,16,24,0.92);
+  border:1px solid rgba(34,211,238,0.12);
+  border-radius:20px;
+  backdrop-filter:blur(32px);
+  box-shadow:0 0 80px rgba(34,211,238,0.04),0 32px 80px rgba(0,0,0,0.6);
+  animation:floatUp 0.6s cubic-bezier(0.16,1,0.3,1) forwards;
 }
 .login-logo{display:flex;align-items:center;gap:12px;margin-bottom:28px;}
 .login-logo-icon{
@@ -126,25 +129,25 @@ body{
   font-family:var(--mono);font-size:13px;outline:none;
   transition:border-color 0.2s,background 0.2s;
 }
-.login-input:focus{border-color:rgba(0,212,255,0.45);background:rgba(0,212,255,0.04);}
+.login-input:focus{border-color:rgba(34,211,238,0.4);background:rgba(34,211,238,0.03);box-shadow:0 0 0 3px rgba(34,211,238,0.06);}
 .login-input::placeholder{color:var(--text3);font-family:var(--sans);font-size:12px;}
 .login-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:13px;opacity:0.35;}
 .pw-toggle{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text2);cursor:pointer;font-size:12px;transition:color 0.2s;line-height:1;}
 .pw-toggle:hover{color:var(--cyan);}
 .login-error{
   display:none;font-size:11px;font-weight:600;color:var(--red);
-  background:var(--red-dim);border:1px solid rgba(255,61,87,0.2);
+  background:var(--red-dim);border:1px solid rgba(248,113,113,0.2);
   border-radius:6px;padding:7px 10px;margin-bottom:14px;text-align:center;
 }
 .login-error.show{display:block;animation:shake 0.35s ease-out;}
 .login-btn{
   width:100%;padding:11px;
-  background:linear-gradient(135deg,#0077cc,var(--cyan));
-  border:none;border-radius:8px;color:white;
+  background:linear-gradient(135deg,#0891b2,var(--cyan));
+  border:none;border-radius:10px;color:white;
   font-family:var(--sans);font-size:12px;font-weight:700;
-  letter-spacing:1px;text-transform:uppercase;cursor:pointer;
+  letter-spacing:1.2px;text-transform:uppercase;cursor:pointer;
   transition:opacity 0.2s,transform 0.15s;
-  box-shadow:0 4px 16px rgba(0,212,255,0.3);margin-top:4px;
+  box-shadow:0 4px 20px rgba(34,211,238,0.25);margin-top:6px;
 }
 .login-btn:hover{opacity:0.9;transform:translateY(-1px);}
 .login-footer{margin-top:18px;text-align:center;font-size:9px;color:var(--text3);letter-spacing:0.5px;}
@@ -158,11 +161,11 @@ body{
 /* ── Critical Banner ── */
 #critBanner{
   display:none;
-  background:linear-gradient(90deg,rgba(255,61,87,0.95),rgba(200,30,60,0.95));
+  background:linear-gradient(90deg,rgba(248,113,113,0.95),rgba(200,30,60,0.95));
   color:white;text-align:center;padding:8px 48px;
   font-weight:700;font-size:11px;letter-spacing:1px;
   position:relative;flex-shrink:0;
-  box-shadow:0 2px 12px rgba(255,61,87,0.4);
+  box-shadow:0 2px 12px rgba(248,113,113,0.4);
   animation:slideDown 0.3s ease-out;z-index:100;
 }
 #critBanner::before{
@@ -188,9 +191,10 @@ body{
 }
 .hdr-logo{
   width:32px;height:32px;
-  background:linear-gradient(135deg,var(--cyan),#0080ff);
-  border-radius:8px;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,var(--cyan),#0ea5e9);
+  border-radius:9px;display:flex;align-items:center;justify-content:center;
   font-size:16px;box-shadow:0 0 16px var(--cyan-glow);flex-shrink:0;
+  animation:glowPulse 4s ease-in-out infinite;
 }
 .hdr-brand{flex-shrink:0;}
 .hdr-brand-name{font-size:14px;font-weight:800;letter-spacing:0.3px;line-height:1;}
@@ -214,8 +218,8 @@ body{
   font-size:9px;font-weight:800;letter-spacing:1px;
   text-transform:uppercase;flex-shrink:0;transition:all 0.4s;
 }
-.ign-badge.on{background:var(--green-dim);color:var(--green);border:1px solid rgba(0,230,118,0.25);}
-.ign-badge.off{background:var(--red-dim);color:var(--red);border:1px solid rgba(255,61,87,0.2);}
+.ign-badge.on{background:var(--green-dim);color:var(--green);border:1px solid rgba(52,211,153,0.25);}
+.ign-badge.off{background:var(--red-dim);color:var(--red);border:1px solid rgba(248,113,113,0.2);}
 
 /* Header metrics */
 .hdr-metrics{display:flex;gap:0;margin-left:auto;}
@@ -246,7 +250,7 @@ body{
 .trip-pill{
   font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;
   background:var(--green-dim);color:var(--green);
-  border:1px solid rgba(0,230,118,0.2);letter-spacing:0.5px;
+  border:1px solid rgba(52,211,153,0.2);letter-spacing:0.5px;
   flex-shrink:0;animation:tripPulse 2s infinite;
 }
 .btn-track{
@@ -256,19 +260,19 @@ body{
 }
 .btn-track.start{
   background:linear-gradient(135deg,#059669,var(--green));color:white;
-  box-shadow:0 3px 10px rgba(0,230,118,0.3);
+  box-shadow:0 3px 10px rgba(52,211,153,0.3);
 }
 .btn-track.start:hover:not(:disabled){opacity:0.9;transform:translateY(-1px);}
 .btn-track.start:disabled{opacity:0.3;cursor:not-allowed;transform:none;box-shadow:none;}
-.btn-track.stop{background:var(--red-dim);color:var(--red);border:1px solid rgba(255,61,87,0.25);}
-.btn-track.stop:hover{background:rgba(255,61,87,0.2);}
+.btn-track.stop{background:var(--red-dim);color:var(--red);border:1px solid rgba(248,113,113,0.25);}
+.btn-track.stop:hover{background:rgba(248,113,113,0.2);}
 .btn-gf{
-  padding:6px 12px;border-radius:7px;border:1px solid rgba(0,212,255,0.25);
+  padding:6px 12px;border-radius:7px;border:1px solid rgba(34,211,238,0.25);
   background:var(--cyan-dim);color:var(--cyan);
   font-family:var(--sans);font-size:10px;font-weight:700;
   letter-spacing:0.3px;cursor:pointer;transition:all 0.2s;flex-shrink:0;
 }
-.btn-gf:hover{background:rgba(0,212,255,0.2);}
+.btn-gf:hover{background:rgba(34,211,238,0.2);}
 
 /* ════════════════════════════════════════════════════════════
    MAIN LAYOUT
@@ -297,7 +301,7 @@ body{
   position:absolute;top:12px;left:12px;z-index:400;
   display:flex;align-items:center;gap:6px;
   padding:5px 12px;border-radius:20px;
-  background:rgba(7,9,15,0.85);border:1px solid rgba(0,212,255,0.25);
+  background:rgba(7,9,15,0.85);border:1px solid rgba(34,211,238,0.25);
   backdrop-filter:blur(12px);
 }
 .map-badge-dot{width:5px;height:5px;border-radius:50%;background:var(--cyan);animation:pulse 2s infinite;box-shadow:0 0 6px var(--cyan);}
@@ -311,7 +315,7 @@ body{
   cursor:pointer;transition:all 0.2s;font-size:13px;
   backdrop-filter:blur(12px);
 }
-.map-btn:hover{background:var(--cyan-dim);border-color:rgba(0,212,255,0.4);color:var(--cyan);}
+.map-btn:hover{background:var(--cyan-dim);border-color:rgba(34,211,238,0.4);color:var(--cyan);}
 .map-theme-btn{width:auto;padding:0 10px;font-size:9px;font-weight:700;letter-spacing:0.5px;}
 
 .map-info-bar{
@@ -341,11 +345,11 @@ body{
 .stat-cell::before{
   content:'';position:absolute;top:0;left:0;right:0;height:2px;
 }
-.stat-cell.c-cyan::before{background:var(--cyan);}
-.stat-cell.c-green::before{background:var(--green);}
-.stat-cell.c-amber::before{background:var(--amber);}
-.stat-cell.c-red::before{background:var(--red);}
-.stat-cell.c-purple::before{background:var(--purple);}
+.stat-cell.c-cyan::before{background:linear-gradient(90deg,var(--cyan),transparent);}
+.stat-cell.c-green::before{background:linear-gradient(90deg,var(--green),transparent);}
+.stat-cell.c-amber::before{background:linear-gradient(90deg,var(--amber),transparent);}
+.stat-cell.c-red::before{background:linear-gradient(90deg,var(--red),transparent);}
+.stat-cell.c-purple::before{background:linear-gradient(90deg,var(--purple),transparent);}
 .stat-lbl{font-size:8px;font-weight:700;color:var(--text2);letter-spacing:0.8px;text-transform:uppercase;}
 .stat-val{font-size:22px;font-weight:300;font-family:var(--mono);line-height:1.1;}
 .stat-sub{font-size:9px;color:var(--text2);}
@@ -373,9 +377,11 @@ body{
   background:var(--surface);
   border:1px solid var(--border);
   border-radius:var(--r);
-  padding:12px 14px;
+  padding:14px 16px;
   flex-shrink:0;
+  transition:border-color 0.3s;
 }
+.card:hover{border-color:var(--border2);}
 .card-hdr{
   display:flex;align-items:center;justify-content:space-between;
   margin-bottom:10px;
@@ -386,16 +392,16 @@ body{
   display:flex;align-items:center;gap:6px;
 }
 .card-title::before{
-  content:'';display:inline-block;width:4px;height:4px;
-  background:var(--cyan);border-radius:50%;box-shadow:0 0 6px var(--cyan);
+  content:'';display:inline-block;width:3px;height:14px;
+  background:var(--cyan);border-radius:2px;
 }
 .card-action{
   font-size:9px;font-weight:700;color:var(--cyan);
-  background:var(--cyan-dim);border:1px solid rgba(0,212,255,0.2);
+  background:var(--cyan-dim);border:1px solid rgba(34,211,238,0.2);
   border-radius:5px;padding:2px 8px;cursor:pointer;
   font-family:var(--sans);letter-spacing:0.3px;transition:background 0.2s;
 }
-.card-action:hover{background:rgba(0,212,255,0.2);}
+.card-action:hover{background:rgba(34,211,238,0.2);}
 
 /* Info rows */
 .info-row{
@@ -420,7 +426,7 @@ body{
   display:flex;flex-direction:column;align-items:center;gap:2px;
   transition:border-color 0.3s,background 0.3s;
 }
-.tpms-tile.warn{border-color:rgba(255,61,87,0.3);background:var(--red-dim);}
+.tpms-tile.warn{border-color:rgba(248,113,113,0.3);background:var(--red-dim);}
 .tpms-tile.offline{border-color:rgba(255,255,255,0.06);background:rgba(0,0,0,0.2);}
 .tpms-pos{font-size:8px;font-weight:700;color:var(--text2);letter-spacing:0.8px;text-transform:uppercase;}
 .tpms-psi{font-size:16px;font-weight:700;font-family:var(--mono);}
@@ -458,14 +464,14 @@ body{
   font-size:14px;font-weight:600;outline:none;
   transition:border-color 0.2s;
 }
-.speed-lim-input:focus{border-color:rgba(255,171,0,0.5);}
+.speed-lim-input:focus{border-color:rgba(251,191,36,0.5);}
 .speed-lim-btn{
-  padding:5px 12px;border-radius:6px;border:1px solid rgba(255,171,0,0.25);
+  padding:5px 12px;border-radius:6px;border:1px solid rgba(251,191,36,0.25);
   background:var(--amber-dim);color:var(--amber);
   font-family:var(--sans);font-size:9px;font-weight:700;
   cursor:pointer;transition:all 0.2s;letter-spacing:0.5px;
 }
-.speed-lim-btn:hover{background:rgba(255,171,0,0.2);}
+.speed-lim-btn:hover{background:rgba(251,191,36,0.2);}
 .speed-lim-lbl{font-size:10px;color:var(--text2);}
 
 /* Alert feed */
@@ -492,7 +498,7 @@ body{
   border-radius:5px;color:var(--text);font-family:var(--mono);font-size:10px;outline:none;
   min-width:0;
 }
-.gf-inp:focus{border-color:rgba(0,212,255,0.35);}
+.gf-inp:focus{border-color:rgba(34,211,238,0.35);}
 .gf-inp::placeholder{color:var(--text3);font-family:var(--sans);font-size:9px;}
 .gf-add-btn{
   padding:5px 10px;border-radius:5px;border:none;
@@ -503,16 +509,16 @@ body{
 .gf-add-btn:hover{opacity:0.85;}
 .gf-gps-btn{
   width:100%;padding:5px;border-radius:5px;
-  border:1px solid rgba(0,212,255,0.2);background:var(--cyan-dim);
+  border:1px solid rgba(34,211,238,0.2);background:var(--cyan-dim);
   color:var(--cyan);font-size:9px;font-weight:700;cursor:pointer;
   letter-spacing:0.3px;transition:background 0.2s;
 }
-.gf-gps-btn:hover{background:rgba(0,212,255,0.2);}
+.gf-gps-btn:hover{background:rgba(34,211,238,0.2);}
 
 /* Leaflet GF tooltip */
 .gf-tip{
   background:rgba(7,9,15,0.9)!important;
-  border:1px solid rgba(0,212,255,0.3)!important;
+  border:1px solid rgba(34,211,238,0.3)!important;
   color:var(--cyan)!important;
   font-family:var(--sans)!important;
   font-size:10px!important;font-weight:700!important;
@@ -540,11 +546,11 @@ body{
     <div class="login-logo">
       <div class="login-logo-icon">🚛</div>
       <div class="login-brand">
-        <div class="login-brand-name">ARC Fleet IQ</div>
+        <div class="login-brand-name">Fleet Hub</div>
         <div class="login-brand-sub">Cloud Harbor Technologies</div>
       </div>
     </div>
-    <div class="login-title">Sign in to access the Intelligence Dashboard</div>
+    <div class="login-title">Sign in to the Intelligence Dashboard</div>
     <div class="login-field">
       <label class="login-label" for="loginUser">Username</label>
       <div class="login-input-wrap">
@@ -562,7 +568,7 @@ body{
     </div>
     <div class="login-error" id="loginError">⚠ Invalid username or password</div>
     <button class="login-btn" id="loginBtn">Access Dashboard →</button>
-    <div class="login-footer">ARC LABS · FLEET IQ PLATFORM · v5.0</div>
+    <div class="login-footer">Fleet Hub · Intelligent Fleet Management · v7.0</div>
   </div>
 </div>
 
@@ -579,7 +585,7 @@ body{
   <div class="hdr">
     <div class="hdr-logo">🚛</div>
     <div class="hdr-brand">
-      <div class="hdr-brand-name">ARC Fleet IQ</div>
+      <div class="hdr-brand-name">Fleet Hub</div>
       <div class="hdr-brand-sub">Intelligent Fleet Management</div>
     </div>
     <div class="hdr-div"></div>
@@ -595,7 +601,7 @@ body{
     <div class="hdr-metrics">
       <div class="hdr-m">
         <div class="hdr-ml">Vehicle</div>
-        <div class="hdr-mv" id="hVehicle">AP09AB1234</div>
+        <div class="hdr-mv" id="hVehicle">TS07JA6273</div>
       </div>
       <div class="hdr-m">
         <div class="hdr-ml">Firmware</div>
@@ -750,7 +756,10 @@ body{
         <div class="card">
           <div class="card-hdr">
             <div class="card-title">Geo-Fences</div>
-            <span style="font-size:9px;color:var(--text2);font-family:var(--mono);" id="gfCountLbl">0 / 8 zones</span>
+            <span style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:9px;color:var(--text2);font-family:var(--mono);" id="gfCountLbl">0 / 8 zones</span>
+              <button class="card-action" onclick="clearAllGeofences()" style="color:var(--red);border-color:rgba(248,113,113,0.2);">Clear All</button>
+            </span>
           </div>
           <div class="gf-form">
             <div class="gf-form-row">
@@ -859,19 +868,19 @@ let lastTripDist = 0;
 const MAP_THEMES = [
   { label:'🌙 DARK',
     tile:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    path:'#00d4ff', marker:'#00d4ff', start:'#00e676', light:false },
+    path:'#22d3ee', marker:'#22d3ee', start:'#34d399', light:false },
   { label:'☀️ LIGHT',
     tile:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    path:'#0077cc', marker:'#0077cc', start:'#00c853', light:true },
+    path:'#0891b2', marker:'#0891b2', start:'#059669', light:true },
   { label:'🛰️ SAT',
     tile:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    path:'#ffab00', marker:'#ffab00', start:'#00e676', light:false }
+    path:'#fbbf24', marker:'#fbbf24', start:'#34d399', light:false }
 ];
 
 // ════════════════════════════════════════════════════════════════
 // LOCAL STORAGE
 // ════════════════════════════════════════════════════════════════
-const SK = { trail:'fh5_trail', telem:'fh5_telem', alerts:'fh5_alerts', gf:'fh5_gf', speeds:'fh5_spd' };
+const SK = { trail:'fh7_trail', telem:'fh7_telem', alerts:'fh7_alerts', gf:'fh7_gf', speeds:'fh7_spd' };
 
 const ls = {
   set(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} },
@@ -951,7 +960,7 @@ function drawSpeedChart() {
   // Speed limit line
   const limitY = h - (currentSpeedLimit / maxSpd) * h;
   ctx.beginPath();
-  ctx.strokeStyle = 'rgba(255,171,0,0.35)';
+  ctx.strokeStyle = 'rgba(251,191,36,0.35)';
   ctx.lineWidth = 1;
   ctx.setLineDash([4,4]);
   ctx.moveTo(0, limitY); ctx.lineTo(w, limitY);
@@ -959,7 +968,7 @@ function drawSpeedChart() {
 
   // Speed area
   ctx.beginPath();
-  ctx.strokeStyle = '#00d4ff';
+  ctx.strokeStyle = '#22d3ee';
   ctx.lineWidth = 1.5;
   ctx.lineJoin = 'round';
   speedHistory.forEach((s,i) => {
@@ -969,8 +978,8 @@ function drawSpeedChart() {
   ctx.stroke();
 
   const grad = ctx.createLinearGradient(0,0,0,h);
-  grad.addColorStop(0,'rgba(0,212,255,0.25)');
-  grad.addColorStop(1,'rgba(0,212,255,0)');
+  grad.addColorStop(0,'rgba(34,211,238,0.25)');
+  grad.addColorStop(1,'rgba(34,211,238,0)');
   ctx.lineTo(w,h); ctx.lineTo(0,h);
   ctx.fillStyle = grad; ctx.fill();
 
@@ -1148,9 +1157,10 @@ function setSpeedLimit() {
 // ════════════════════════════════════════════════════════════════
 function drawGfCircle(lat, lng, radius, name) {
   if (!map) return null;
+  if (!lat || !lng || lat === 0 || lng === 0) return null; // Skip invalid coordinates
   const circle = L.circle([lat,lng], {
-    radius, color:'#00d4ff', weight:1.5, opacity:0.6,
-    fillColor:'#00d4ff', fillOpacity:0.05
+    radius, color:'#22d3ee', weight:1.5, opacity:0.6,
+    fillColor:'#22d3ee', fillOpacity:0.05
   }).addTo(map);
   circle.bindTooltip(name, {permanent:false, direction:'top', className:'gf-tip'});
   gfCircles.push({circle, name});
@@ -1170,7 +1180,7 @@ function renderGeofences() {
   el.innerHTML = localGeofences.map((gf,i)=>{
     const ins   = !!gf.inside;
     const dotC  = ins ? 'var(--red)' : 'var(--green)';
-    const bgC   = ins ? 'rgba(255,61,87,0.12)' : 'rgba(0,230,118,0.1)';
+    const bgC   = ins ? 'rgba(248,113,113,0.12)' : 'rgba(52,211,153,0.1)';
     const fgC   = ins ? 'var(--red)' : 'var(--green)';
     const dist  = gf.dist >= 0 ? `${Math.round(gf.dist)}m` : '—';
     return `<div class="gf-zone" style="margin-bottom:5px">
@@ -1215,6 +1225,18 @@ function removeGf(i) {
   renderGeofences();
 }
 
+function clearAllGeofences() {
+  if (!confirm('Delete ALL geofences from device and cloud?')) return;
+  // Send remove command for each zone to device
+  localGeofences.forEach(gf => publishCmd('remove_geofence', {name: gf.name}));
+  localGeofences = [];
+  ls.set(SK.gf, []);
+  saveConfigToAPI();
+  rebuildGfCircles();
+  renderGeofences();
+  addAlert('info','geofences_cleared','All geofences removed');
+}
+
 // One-click geofence at current GPS position (Req #6: 200 m default)
 function oneClickGeofence() {
   const last = ls.get(SK.telem);
@@ -1256,27 +1278,19 @@ let telemetry_interval_ms = 10000;
 
 function syncGfFromTelemetry(gfArr) {
   if (!gfArr||!gfArr.length) return;
-  let changed = false;
   gfArr.forEach(tGf => {
-    // Case-insensitive name matching to handle mismatches
+    // Case-insensitive name matching
     const local = localGeofences.find(l=>l.name.toLowerCase().trim()===tGf.name.toLowerCase().trim());
     if (local) {
       local.inside = tGf.inside;
       if (tGf.dist >= 0) local.dist = tGf.dist;
-    } else {
-      // Adopt geofences from device that don't exist locally
-      // (created from another browser/session or via MQTT command)
-      localGeofences.push({
-        name: tGf.name,
-        lat: 0, lng: 0, // Position unknown from telemetry — geofence circle won't draw
-        radius: 200,
-        inside: tGf.inside,
-        dist: tGf.dist >= 0 ? tGf.dist : -1,
-      });
-      changed = true;
     }
+    // Do NOT adopt device geofences that aren't in our list —
+    // DynamoDB CONFIG is the single source of truth, not telemetry.
+    // If a geofence exists on the device but not in CONFIG, it means
+    // it was deleted from the dashboard and the device hasn't processed
+    // the remove command yet.
   });
-  if (changed) ls.set(SK.gf, localGeofences);
   renderGeofences();
 }
 
@@ -1302,25 +1316,43 @@ function drawScoreRing(score) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// TPMS RENDER
+// TPMS RENDER — respects stale flag properly
 // ════════════════════════════════════════════════════════════════
 function renderTpms(tpmsArr) {
   const el = document.getElementById('tpmsInfo');
-  // Build lookup from payload (stale sensors are already excluded by firmware)
   const map_ = {};
   (tpmsArr||[]).forEach(t => { map_[t.mac] = t; });
 
   const tiles = TPMS_ORDER.map(mac => {
     const name   = TPMS_MAP[mac];
     const sensor = map_[mac];
-    const offline = !sensor;
 
-    if (offline) {
+    // No data at all for this sensor
+    if (!sensor) {
       return `<div class="tpms-tile offline">
         <div class="tpms-pos">${name}</div>
-        <div class="tpms-offline-lbl">— OFFLINE —</div>
+        <div class="tpms-offline-lbl">— NO DATA —</div>
       </div>`;
     }
+
+    // Sensor is stale (BLE signal lost or data too old)
+    if (sensor.stale) {
+      return `<div class="tpms-tile offline">
+        <div class="tpms-pos">${name}</div>
+        <div class="tpms-offline-lbl">— STALE —</div>
+        <div style="font-size:8px;color:var(--text3);margin-top:2px;">Last: ${sensor.psi > 0 ? sensor.psi.toFixed(1)+' PSI' : 'N/A'}</div>
+      </div>`;
+    }
+
+    // Sensor has zero PSI — likely invalid/not on wheel
+    if (sensor.psi <= 0) {
+      return `<div class="tpms-tile offline">
+        <div class="tpms-pos">${name}</div>
+        <div class="tpms-offline-lbl">— INVALID —</div>
+      </div>`;
+    }
+
+    // Active sensor with valid data
     const warn  = sensor.psi < TPMS_LOW_PSI || sensor.psi > TPMS_HIGH_PSI || sensor.tempC > TPMS_HIGH_TEMP;
     const color = warn ? 'var(--red)' : 'var(--cyan)';
     const bat   = sensor.bat||0;
@@ -1345,9 +1377,9 @@ function timeStr() {
 }
 
 const ALERT_STYLES = {
-  critical: {bg:'rgba(255,61,87,0.1)', border:'rgba(255,61,87,0.25)', fg:'var(--red)'},
-  warning:  {bg:'rgba(255,171,0,0.1)', border:'rgba(255,171,0,0.25)', fg:'var(--amber)'},
-  info:     {bg:'rgba(0,212,255,0.07)', border:'rgba(0,212,255,0.18)', fg:'var(--cyan)'}
+  critical: {bg:'rgba(248,113,113,0.1)', border:'rgba(248,113,113,0.25)', fg:'var(--red)'},
+  warning:  {bg:'rgba(251,191,36,0.1)', border:'rgba(251,191,36,0.25)', fg:'var(--amber)'},
+  info:     {bg:'rgba(34,211,238,0.07)', border:'rgba(34,211,238,0.18)', fg:'var(--cyan)'}
 };
 
 function addAlert(severity, type, detail) {
@@ -1552,12 +1584,22 @@ async function restoreState() {
     if (last) updateDash(last);
   }
 
-  // 2. Load alert history from API
+  // 2. Load alert history from API (limit to 15 most recent, deduplicate)
   try {
-    const alertData = await api('/alerts?hours=24&limit=30');
+    const alertData = await api('/alerts?hours=12&limit=15');
     if (alertData && alertData.items && alertData.items.length) {
       storedAlerts = [];
-      alertData.items.reverse().forEach(a => {
+      // Deduplicate — keep only last occurrence of each alert type
+      const seen = new Set();
+      const deduped = [];
+      for (const a of alertData.items) {
+        const key = a.alert || 'unknown';
+        if (!seen.has(key) || key.includes('geofence') || key.includes('trip')) {
+          deduped.push(a);
+          seen.add(key);
+        }
+      }
+      deduped.slice(0, 15).reverse().forEach(a => {
         const type = a.alert || 'unknown';
         const tStr = type.toLowerCase();
         let sev = 'info';
@@ -1572,7 +1614,7 @@ async function restoreState() {
         else if (a.speed) detail = `${type} @ ${parseFloat(a.speed).toFixed(0)} km/h`;
         addAlert(sev, type, detail);
       });
-      console.log(`Restored ${alertData.items.length} alerts from API`);
+      console.log(`Restored ${deduped.length} alerts from API (deduped)`);
     }
   } catch(e) {
     console.warn('API /alerts failed, falling back to localStorage');
@@ -1700,7 +1742,7 @@ function attemptLogin() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Session check — skip login if a valid session exists
+  // Session check — skip login if valid session exists
   if (hasValidSession()) { bootApp(); return; }
 
   document.getElementById('loginBtn').addEventListener('click', attemptLogin);
