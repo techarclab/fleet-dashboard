@@ -1098,21 +1098,28 @@ function updateTrackingBar(fix, tracking, trip) {
     return;
   }
 
-  if (tracking) {
+  // Trip active (from device firmware — auto-detected by speed)
+  if (trip && trip.active) {
     dot.style.cssText = 'background:var(--green);animation:pulse 2s infinite';
     lbl.style.color   = 'var(--green)';
-    lbl.textContent   = 'Tracking Active';
-    if (trip && trip.active) {
-      const km  = (trip.distKm||0).toFixed(1);
-      const dur = trip.durationMin ? `${Math.floor(trip.durationMin)}m` : '—';
-      info.textContent = `Trip #${trip.num} · ${km} km · ${dur}`;
-      pill.style.display = '';
-    } else {
-      info.textContent = 'GPS Fix OK — Idle';
-      pill.style.display = 'none';
-    }
+    lbl.textContent   = 'Trip Active';
+    const km  = (trip.distKm||0).toFixed(1);
+    const dur = trip.durationMin ? `${Math.floor(trip.durationMin)}m` : '—';
+    info.textContent = `Trip #${trip.num} · ${km} km · ${dur}`;
+    pill.style.display = '';
     btnS.style.display = 'none'; btnSt.style.display = '';
-  } else {
+  }
+  // Tracking enabled but no active trip (vehicle idle but user started tracking)
+  else if (tracking) {
+    dot.style.cssText = 'background:var(--cyan);animation:pulse 2s infinite';
+    lbl.style.color   = 'var(--cyan)';
+    lbl.textContent   = 'Tracking — Waiting for movement';
+    info.textContent  = 'Trip starts automatically when vehicle moves';
+    pill.style.display = 'none';
+    btnS.style.display = 'none'; btnSt.style.display = '';
+  }
+  // Ready state
+  else {
     dot.style.cssText = 'background:var(--text2);animation:none';
     lbl.style.color   = 'var(--text2)';
     lbl.textContent   = 'Ready to track';
@@ -1125,14 +1132,14 @@ function updateTrackingBar(fix, tracking, trip) {
 
 function startTracking() {
   if (!gpsHasFix) { addAlert('info','no_gps_fix','GPS fix required before tracking'); return; }
-  publishCmd('start_tracking');
   trackingActive = true;
+  sessionStorage.setItem('fh_tracking', 'true');
   updateTrackingBar(true, true, null);
 }
 
 function stopTracking() {
-  publishCmd('stop_tracking');
   trackingActive = false;
+  sessionStorage.removeItem('fh_tracking');
   updateTrackingBar(gpsHasFix, false, null);
 }
 
@@ -1512,9 +1519,11 @@ function updateDash(d) {
     document.getElementById('sUptime').textContent = `uptime: ${h}h${m}m`;
   }
 
-  // ── Tracking state — restore from device trip data ──────────
-  if (d.trip && d.trip.active) {
-    trackingActive = true; // Device says trip is active — sync dashboard state
+  // ── Tracking state — fully synced from device trip data ─────
+  // The firmware controls trip detection automatically (speed-based).
+  // The dashboard just mirrors whatever the device reports.
+  if (d.trip) {
+    trackingActive = !!d.trip.active;
   }
   updateTrackingBar(gpsHasFix, trackingActive, d.trip||null);
 
@@ -1584,6 +1593,11 @@ function setConn(state, label) {
 async function restoreState() {
   updateTrackingBar(false, false, null);
 
+  // Restore tracking state from sessionStorage
+  if (sessionStorage.getItem('fh_tracking') === 'true') {
+    trackingActive = true;
+  }
+
   // 1. Load latest device state from API (replaces localStorage)
   try {
     const latest = await api('/latest');
@@ -1597,37 +1611,44 @@ async function restoreState() {
     if (last) updateDash(last);
   }
 
-  // 2. Load alert history from API (limit to 15 most recent, deduplicate)
+  // 2. Load alert history from API (limit to 15, deduplicate, filter unregistered TPMS)
   try {
     const alertData = await api('/alerts?hours=12&limit=15');
     if (alertData && alertData.items && alertData.items.length) {
       storedAlerts = [];
-      // Deduplicate — keep only last occurrence of each alert type
       const seen = new Set();
       const deduped = [];
       for (const a of alertData.items) {
         const key = a.alert || 'unknown';
+        // Skip TPMS alerts from unregistered sensors
+        if (key.toLowerCase().includes('tpms') && a.sensor && !TPMS_MAP[a.sensor]) continue;
         if (!seen.has(key) || key.includes('geofence') || key.includes('trip')) {
           deduped.push(a);
           seen.add(key);
         }
       }
+      // Temporarily disable critical banner during restore
+      const bannerEl = document.getElementById('critBanner');
+      const bannerWasHidden = bannerEl.style.display === 'none' || !bannerEl.style.display;
       deduped.slice(0, 15).reverse().forEach(a => {
         const type = a.alert || 'unknown';
         const tStr = type.toLowerCase();
         let sev = 'info';
-        if (tStr.includes('tpms')||tStr.includes('harsh')||tStr.includes('crash')) sev='critical';
+        if (tStr.includes('tpms')||tStr.includes('harsh')||tStr.includes('crash')) sev='warning'; // downgrade restored critical to warning
         else if (tStr.includes('speed')||tStr.includes('geofence')) sev='warning';
+        else if (tStr.includes('trip')) sev='info';
         let detail = type;
         if (a.accel) detail = `Harsh Accel ${parseFloat(a.accel).toFixed(1)} km/h/s`;
         else if (a.brake) detail = `Harsh Brake ${parseFloat(a.brake).toFixed(1)} km/h/s`;
         else if (a.turn) detail = `Harsh Corner ${parseFloat(a.turn).toFixed(0)} deg/s`;
-        else if (a.psi) detail = `Tire PSI: ${parseFloat(a.psi).toFixed(1)} (${a.sensor||''})`;
+        else if (a.psi) detail = `Tire PSI: ${parseFloat(a.psi).toFixed(1)} (${TPMS_MAP[a.sensor]||a.sensor||''})`;
         else if (a.zone) detail = `${type} — ${a.zone}`;
         else if (a.speed) detail = `${type} @ ${parseFloat(a.speed).toFixed(0)} km/h`;
         addAlert(sev, type, detail);
       });
-      console.log(`Restored ${deduped.length} alerts from API (deduped)`);
+      // Keep banner hidden if it was hidden before restore
+      if (bannerWasHidden) bannerEl.style.display = 'none';
+      console.log(`Restored ${deduped.length} alerts from API (filtered)`);
     }
   } catch(e) {
     console.warn('API /alerts failed, falling back to localStorage');
