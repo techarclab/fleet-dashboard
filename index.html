@@ -595,13 +595,13 @@ body{
     </div>
     <div class="ign-badge off" id="ignBadge">
       <span id="ignDot" style="width:5px;height:5px;border-radius:50%;background:currentColor;display:inline-block;"></span>
-      <span id="ignLbl">IGN OFF</span>
+      <span id="ignLbl">IDLE</span>
     </div>
     <div class="hdr-div"></div>
     <div class="hdr-metrics">
       <div class="hdr-m">
         <div class="hdr-ml">Vehicle</div>
-        <div class="hdr-mv" id="hVehicle">TS07JA6273</div>
+        <div class="hdr-mv" id="hVehicle">AP09AB1234</div>
       </div>
       <div class="hdr-m">
         <div class="hdr-ml">Firmware</div>
@@ -903,7 +903,7 @@ function publishCmd(action, extra={}) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// IGNITION LOGIC  (Req #3: <2 km/h = OFF, >2 km/h = ON)
+// VEHICLE STATUS  (Req #3: <2 km/h = IDLE, >2 km/h = MOVING)
 // ════════════════════════════════════════════════════════════════
 function updateIgnition(speed) {
   const on = speed > 2;
@@ -912,7 +912,7 @@ function updateIgnition(speed) {
   const badge = document.getElementById('ignBadge');
   const lbl   = document.getElementById('ignLbl');
   badge.className = `ign-badge ${on ? 'on' : 'off'}`;
-  lbl.textContent = on ? 'IGN ON' : 'IGN OFF';
+  lbl.textContent = on ? 'MOVING' : 'IDLE';
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1413,15 +1413,23 @@ function addAlert(severity, type, detail) {
 function handleAlertMsg(data) {
   const type = data.alert || 'unknown';
   const tStr = type.toLowerCase();
+
+  // Suppress TPMS alerts for unregistered sensors
+  if (tStr.includes('tpms') && data.sensor && !TPMS_MAP[data.sensor]) {
+    console.log(`Suppressed TPMS alert for unregistered sensor: ${data.sensor}`);
+    return;
+  }
+
   let sev = 'info', detail = type;
 
   if (tStr.includes('tpms')||tStr.includes('harsh')||tStr.includes('crash')) sev='critical';
   else if (tStr.includes('speed')||tStr.includes('geofence')) sev='warning';
+  else if (tStr.includes('trip')) sev='info';
 
   if (data.accel)   detail = `Harsh Accel ${parseFloat(data.accel).toFixed(1)} km/h/s`;
   else if (data.brake) detail = `Harsh Brake ${parseFloat(data.brake).toFixed(1)} km/h/s`;
   else if (data.turn)  detail = `Harsh Corner ${parseFloat(data.turn).toFixed(0)} °/s`;
-  else if (data.psi)   detail = `Tire PSI: ${parseFloat(data.psi).toFixed(1)} (${data.sensor||''})`;
+  else if (data.psi)   detail = `Tire PSI: ${parseFloat(data.psi).toFixed(1)} (${TPMS_MAP[data.sensor]||data.sensor||''})`;
   else if (data.zone)  detail = `${type} — ${data.zone}${data.event?' ('+data.event+')':''}`;
   else if (data.speed) detail = `${type} @ ${parseFloat(data.speed).toFixed(0)} km/h`;
 
@@ -1504,8 +1512,10 @@ function updateDash(d) {
     document.getElementById('sUptime').textContent = `uptime: ${h}h${m}m`;
   }
 
-  // ── Tracking state ────────────────────────────────────────────
-  if (d.trackingActive !== undefined) trackingActive = d.trackingActive;
+  // ── Tracking state — restore from device trip data ──────────
+  if (d.trip && d.trip.active) {
+    trackingActive = true; // Device says trip is active — sync dashboard state
+  }
   updateTrackingBar(gpsHasFix, trackingActive, d.trip||null);
 
   // ── Trip distance (Req #8) ────────────────────────────────────
@@ -1529,8 +1539,11 @@ function updateDash(d) {
     }
   }
 
-  // ── TPMS (Req #2) ─────────────────────────────────────────────
-  renderTpms(d.tpms);
+  // ── TPMS (Req #2) — filter to registered sensors only ──────
+  if (d.tpms) {
+    const registeredOnly = d.tpms.filter(t => TPMS_MAP[t.mac]);
+    renderTpms(registeredOnly);
+  }
 
   // ── Geofences ─────────────────────────────────────────────────
   if (d.geofences) syncGfFromTelemetry(d.geofences);
@@ -1684,22 +1697,40 @@ async function connect() {
   setConn('connecting','CONNECTING…');
   mqttC = mqtt.connect(url, {
     transformWsUrl:u=>u, protocolVersion:4, clean:true,
-    reconnectPeriod:5000,   // Req #8: auto-reconnect every 5s — no manual refresh needed
+    reconnectPeriod:0,      // Disable built-in reconnect — we handle it ourselves
     connectTimeout:12000,
-    clientId:'iq-'+Math.random().toString(16).substr(2,8)
+    clientId:'fh-'+Math.random().toString(16).substr(2,8)
   });
 
   mqttC.on('connect', () => {
     setConn('connected','CONNECTED');
     mqttC.subscribe(TOPIC_WILD, {qos:0});
+    mqttReconnectAttempts = 0;
   });
   mqttC.on('message', (t,p) => {
     try { handleMsg(t, JSON.parse(p.toString())); } catch(e){}
   });
-  mqttC.on('error', () => setConn('error','ERROR'));
-  mqttC.on('close', () => setConn('connecting','RECONNECTING…'));
-  mqttC.on('reconnect', () => setConn('connecting','RECONNECTING…'));
+  mqttC.on('error', (e) => {
+    console.warn('MQTT error:', e.message || e);
+    setConn('error','ERROR');
+  });
+  mqttC.on('close', () => {
+    setConn('connecting','RECONNECTING…');
+    // Auto-reconnect with fresh credentials after 5 seconds
+    if (!mqttReconnectTimer) {
+      mqttReconnectTimer = setTimeout(() => {
+        mqttReconnectTimer = null;
+        mqttReconnectAttempts++;
+        console.log(`MQTT reconnect attempt ${mqttReconnectAttempts} — refreshing credentials`);
+        if (mqttC) { try { mqttC.end(true); } catch(e){} }
+        mqttC = null;
+        connect(); // Full reconnect with fresh Cognito credentials
+      }, 5000);
+    }
+  });
 }
+let mqttReconnectAttempts = 0;
+let mqttReconnectTimer = null;
 
 // ════════════════════════════════════════════════════════════════
 // CRYPTO  (AWS SigV4)
